@@ -42,3 +42,4 @@ describe("Auth.js Architecture & Constraint Compatibility Audit", () => {
     expect(sessionFields.length).toBe(4);
   });
 });
+
