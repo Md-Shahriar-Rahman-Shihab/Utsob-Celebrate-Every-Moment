@@ -142,3 +142,4 @@ export interface ApiErrorResponse {
 4. **Pagination**:
    - Standard queries support `?page=1&limit=20` (max limit: 100).
    - High-throughput listing (e.g. templates) uses cursor-based pagination `?cursor={id}&limit=20`.
+

@@ -26,3 +26,4 @@ export const createTemplateSchema = z.object({
   priceBdt: z.number().min(0).optional(),
   categoryId: z.string().uuid(),
 });
+

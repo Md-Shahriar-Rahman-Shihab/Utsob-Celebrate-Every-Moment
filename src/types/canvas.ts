@@ -75,3 +75,4 @@ export interface CanvasDocument {
   fontsUsed: string[];
   objects: CanvasObject[];
 }
+

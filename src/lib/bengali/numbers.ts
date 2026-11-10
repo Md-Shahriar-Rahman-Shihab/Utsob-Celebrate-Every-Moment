@@ -61,3 +61,4 @@ export function formatBengaliCurrency(amount: number, includeDecimals = false): 
   const bengaliFormatted = toBengaliNumeral(formattedEnglish);
   return `৳ ${bengaliFormatted}`;
 }
+

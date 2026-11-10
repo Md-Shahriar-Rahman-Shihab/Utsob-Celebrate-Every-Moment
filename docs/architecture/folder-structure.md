@@ -191,3 +191,4 @@ The TypeScript configuration specifies the `@/*` alias pointing directly to `src
 | Schemas | `{name}.schema.ts` | `card.schema.ts`, `env.ts` |
 | Types | `{name}.types.ts` or `types.ts` | `canvas.ts`, `api.ts` |
 | Test Files | `{name}.test.ts` or `{name}.spec.ts` | `numbers.test.ts`, `errors.test.ts` |
+

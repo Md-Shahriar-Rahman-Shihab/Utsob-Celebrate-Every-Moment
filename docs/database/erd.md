@@ -207,3 +207,4 @@ erDiagram
 | Card ➔ ShareLink | Card | ShareLink | `cardId` | `CASCADE` | Deleting a greeting card immediately destroys all public sharing tokens. |
 | Card ➔ Invitation | Card | Invitation | `cardId` | `CASCADE` | An invitation cannot exist without its underlying digital card. |
 | Invitation ➔ RSVP | Invitation | RSVP | `invitationId` | `CASCADE` | Deleting an invitation removes all associated guest responses. |
+

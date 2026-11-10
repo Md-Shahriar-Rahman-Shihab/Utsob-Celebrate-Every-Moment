@@ -15,3 +15,4 @@ export const verifySharePasswordSchema = z.object({
   shareToken: z.string().min(1, "Share token is required"),
   password: z.string().min(1, "Password is required"),
 });
+

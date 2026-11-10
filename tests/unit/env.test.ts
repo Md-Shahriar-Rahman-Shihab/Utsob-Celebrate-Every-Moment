@@ -44,3 +44,4 @@ describe("Environment Validation", () => {
     expect(parsed.NEXT_PUBLIC_APP_URL).toBe("http://localhost:3000");
   });
 });
+

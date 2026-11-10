@@ -1,7 +1,7 @@
 # UTSOB (উৎসব) — Testing Strategy Specification
 
-> **Document Version:** 1.0.0  
-> **Status:** APPROVED (Phase 01)  
+> **Document Version:** 1.1.0 (Audited & Remediated)  
+> **Status:** APPROVED  
 > **Testing Frameworks:** Vitest (Unit/Integration) & Playwright (E2E)  
 
 ---
@@ -14,7 +14,7 @@ Utsob enforces a comprehensive, automated quality assurance strategy. Given our 
 flowchart TD
     E2E["E2E Tests (Playwright)\nCross-browser rendering, Fabric canvas interaction,\nBengali font display, RSVP flow"]
     Integration["Integration Tests (Vitest + Next.js Route Harness)\nAPI route handlers, Prisma queries, Auth middleware,\nCloudinary signing, Gemini safety filtering"]
-    Unit["Unit Tests (Vitest)\nBengali numeral conversion, font manifests, Zod schemas,\nCanvas document sanitization, Error envelopes, Logger PII scrubbing"]
+    Unit["Unit & Security Tests (Vitest)\nBengali numerals, fonts, Zod schemas, Canvas security, SSRF,\nPasskey constant-time crypto, Auth.js constraints, Logger PII scrubbing"]
 
     E2E --- Integration
     Integration --- Unit
@@ -22,17 +22,17 @@ flowchart TD
 
 | Layer | Tooling | Target Execution Time | Frequency |
 | :--- | :--- | :--- | :--- |
-| **Unit Tests** | Vitest | < 2 seconds | Every file save / pre-commit hook |
+| **Unit & Security Tests** | Vitest | < 2 seconds | Every file save / pre-commit hook |
 | **Integration Tests** | Vitest + Test DB | < 15 seconds | Every Git push / Pull Request |
 | **E2E Tests** | Playwright (Chromium/WebKit) | < 2 minutes | Nightly / Pre-deployment pipeline |
 
 ---
 
-## 2. Unit Testing Strategy (Vitest)
+## 2. Unit & Security Testing Strategy (Vitest)
 
-Unit tests focus on deterministic pure functions, domain utilities, Zod validation schemas, and localization algorithms.
+Unit tests focus on deterministic pure functions, domain utilities, Zod validation schemas, localization algorithms, and cryptographic security primitives.
 
-### 2.1 Key Unit Test Suites (Phase 01 Scope)
+### 2.1 Key Test Suites (Phase 01 & 01.1 Scope)
 1. **Bengali Numeral Converter (`tests/unit/bengali/numbers.test.ts`)**:
    - Converts English integers and floats (`12345`) to Bengali numerals (`১২৩৪৫`).
    - Converts Bengali numerals (`১২৩৪৫`) back to English numbers (`12345`).
@@ -48,10 +48,23 @@ Unit tests focus on deterministic pure functions, domain utilities, Zod validati
    - Verifies standard error envelope generation matches API conventions.
 5. **Structured Logger & PII Redaction (`tests/unit/logger.test.ts`)**:
    - Verifies log formatting in JSON.
-   - Verifies automated masking of phone numbers (`+8801712345678`), emails, bearer tokens, and passwords.
-6. **Canvas Document Zod Schema (`tests/unit/canvas.test.ts`)**:
+   - Verifies automated masking of phone numbers (`+88017XX-XXXX5678`), emails, bearer tokens, and passwords.
+6. **Multi-Vector Hardened Canvas Schema (`tests/unit/canvas.test.ts`)**:
    - Verifies acceptance of valid Fabric.js canvas scene graphs.
-   - Verifies rejection of dangerous attributes (e.g. `<script>`, `javascript:` protocols).
+   - Verifies rejection of dangerous protocols (`javascript:`, unencrypted `http:`, executable `data:` URIs).
+   - Verifies SSRF protection against private IP addresses (localhost, 127.0.0.1, 169.254.169.254, RFC 1918).
+   - Verifies rejection of CSS expressions and `<script>` in colors.
+   - Verifies SVG path grammar validation.
+   - Verifies DoS caps: max 200 objects, rejection of nested groups.
+7. **Cryptographic Security & Passkey Suite (`tests/unit/security/crypto.test.ts`)**:
+   - Verifies 128-bit cryptographic entropy of `generateShareToken()`.
+   - Verifies salted scrypt derivation for share passkeys.
+   - Verifies constant-time comparison via `crypto.timingSafeEqual` (preventing timing attacks).
+   - Verifies expiration detection logic (`isShareLinkExpired`).
+8. **Auth.js Compatibility & Architecture Constraints (`tests/unit/auth/auth-compatibility.test.ts`)**:
+   - Verifies database session strategy lock.
+   - Verifies omission of Credentials Provider in MVP per Auth.js official constraints.
+   - Verifies `@auth/prisma-adapter` schema requirements.
 
 ---
 
@@ -61,7 +74,7 @@ Integration tests evaluate multi-component workflows, Route Handlers, and databa
 
 ### 3.1 Test Database & Prisma Mocking
 - Development integration tests utilize Neon development branch databases or an isolated PostgreSQL test instance.
-- Unit-level integration harnesses use a strongly-typed Prisma Mock client (`vitest-mock-extended`) to simulate database responses without network roundtrips.
+- Unit-level integration harnesses use a strongly-typed Prisma Mock client to simulate database responses without network roundtrips.
 
 ### 3.2 External Service Mocking
 - **Cloudinary**: Mocked using local dummy signed tokens; never invokes remote upload APIs in CI.
@@ -86,6 +99,6 @@ Playwright validates end-user interactions in real browser engines (Chromium, Fi
 | Metric | Target | Enforced At |
 | :--- | :--- | :--- |
 | **Unit Test Coverage** | ≥ 85% Statements & Branches | CI Pull Request Gate |
-| **Domain Services Coverage** | ≥ 90% | CI Pull Request Gate |
+| **Security Test Coverage** | 100% Critical Attack Vectors | CI Pull Request Gate |
 | **TypeScript Strictness** | Zero `any` types; `strict: true` | `npm run typecheck` |
-| **Linting & Code Quality** | Zero warnings; ESLint + Prettier | `npm run lint` |
+| **Linting & Code Quality** | Zero warnings; ESLint flat config | `npm run lint` |

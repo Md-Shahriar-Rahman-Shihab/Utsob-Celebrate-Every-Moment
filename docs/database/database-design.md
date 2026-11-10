@@ -1,7 +1,7 @@
 # UTSOB (উৎসব) — Database Design Specification
 
-> **Document Version:** 1.0.0  
-> **Status:** APPROVED (Phase 01)  
+> **Document Version:** 1.1.0 (Audited & Remediated)  
+> **Status:** APPROVED  
 > **Target Database Engine:** PostgreSQL 16+ on Neon Serverless  
 > **ORM:** Prisma ORM  
 
@@ -12,9 +12,9 @@
 The Utsob database is designed as a normalized, relational data store with optimized semi-structured `JSONB` support for complex 2D canvas scene graphs. It is hosted on **Neon Serverless PostgreSQL** to take advantage of compute auto-scaling, branching for testing, and integrated connection pooling via PgBouncer.
 
 ### Design Principles:
-1. **Universally Unique Identifiers (UUID v4)**: All primary keys use `String @id @default(uuid())` (or `@default(dbgenerated("gen_random_uuid()"))`), avoiding sequential integer enumeration attacks on sensitive cards and invitations.
-2. **Auth.js Compatibility**: Identity tables (`User`, `Account`, `Session`, `VerificationToken`) adhere to the standard `@auth/prisma-adapter` specification.
-3. **Optimized Multi-Layer Canvas Storage**: The visual representation of greeting cards and templates is stored in a PostgreSQL `JSONB` column (`canvasJSON`), enabling dynamic layer composition without costly schema migrations.
+1. **Universally Unique Identifiers (UUID v4)**: All primary keys use `String @id @default(uuid())`, avoiding sequential integer enumeration attacks on sensitive cards and invitations.
+2. **Auth.js Compatibility with Database Sessions**: Identity tables (`User`, `Account`, `Session`, `VerificationToken`) adhere to the standard `@auth/prisma-adapter` specification. In accordance with Auth.js architecture, **Database Sessions (`strategy: "database"`)** are used with **Google OAuth**, and Credentials Provider is explicitly excluded from the MVP.
+3. **Optimized Multi-Layer Canvas Storage**: The visual representation of greeting cards and templates is stored in a PostgreSQL `JSONB` column (`canvasJSON`), validated via strict Zod schemas before storage.
 4. **Ownership & Access Separation**: Clear boundary between private creator resources and public consumer views. Deletions cascade cleanly without leaving orphaned links or media records.
 5. **Audit Timestamps**: All business entities include `createdAt` and `updatedAt` timestamps with automated timezone-aware UTC handling.
 
@@ -30,7 +30,7 @@ Represents an authenticated platform user, creator, or administrator.
 - `name`: `String?` (Full display name in English or Bengali).
 - `email`: `String?` (Unique, lowercase normalized).
 - `emailVerified`: `DateTime?` (Timestamp when email was confirmed).
-- `image`: `String?` (Profile avatar URL).
+- `image`: `String?` (Profile avatar URL from Google OAuth).
 - `role`: `UserRole` (Enum: `USER`, `CREATOR`, `ADMIN`; default `USER`).
 - `phoneNumber`: `String?` (Bangladeshi mobile number, e.g., `+8801XXXXXXXXX`).
 - `locale`: `String` (Default `bn-BD`; supports `en-US`).
@@ -39,12 +39,12 @@ Represents an authenticated platform user, creator, or administrator.
 - **Relations**: Accounts (1:N), Sessions (1:N), Cards (1:N), Templates (1:N), Assets (1:N), AIGenerations (1:N), Invitations (1:N).
 
 #### `Account`
-Stores OAuth provider linkages (Google, Facebook) per Auth.js specification.
+Stores OAuth provider linkages (Google OIDC) per Auth.js specification.
 - `id`: `String` (UUID PK).
 - `userId`: `String` (FK -> `User.id`, `onDelete: Cascade`).
-- `type`: `String` (e.g., `oauth`, `credentials`).
+- `type`: `String` (e.g., `oauth`, `oidc`).
 - `provider`: `String` (e.g., `google`).
-- `providerAccountId`: `String` (Unique ID from provider).
+- `providerAccountId`: `String` (Unique subject ID from Google).
 - `refresh_token`: `String?` (`@db.Text`).
 - `access_token`: `String?` (`@db.Text`).
 - `expires_at`: `Int?`.
@@ -56,15 +56,15 @@ Stores OAuth provider linkages (Google, Facebook) per Auth.js specification.
 - **Index**: `@@index([userId])`.
 
 #### `Session`
-Stores active authenticated web sessions per Auth.js specification.
+Stores active authenticated web sessions per Auth.js database session specification.
 - `id`: `String` (UUID PK).
-- `sessionToken`: `String` (Unique).
+- `sessionToken`: `String` (Unique session cookie token).
 - `userId`: `String` (FK -> `User.id`, `onDelete: Cascade`).
-- `expires`: `DateTime`.
+- `expires`: `DateTime` (Session expiration timestamp).
 - **Index**: `@@index([userId])`.
 
 #### `VerificationToken`
-Stores magic link tokens and password reset hashes.
+Stores magic link tokens and email verification hashes.
 - `identifier`: `String` (Email or phone).
 - `token`: `String` (Unique cryptographically secure token).
 - `expires`: `DateTime`.
@@ -136,9 +136,9 @@ A customized greeting card instance created and owned by a user.
 Secure public or restricted access link for sharing rendered cards and digital greetings.
 - `id`: `String` (UUID PK).
 - `cardId`: `String` (FK -> `Card.id`, `onDelete: Cascade`).
-- `shareToken`: `String` (Unique, cryptographically random nano-token or URL-safe string).
+- `shareToken`: `String` (Unique, 128-bit cryptographically secure URL-safe token).
 - `accessType`: `ShareAccessType` (Enum: `VIEW_ONLY`, `CAN_DUPLICATE`; default `VIEW_ONLY`).
-- `passwordHash`: `String?` (Optional bcrypt hash for private family cards).
+- `passwordHash`: `String?` (Optional salted scrypt hash for private family cards).
 - `expiresAt`: `DateTime?` (Optional expiration time).
 - `viewCount`: `Int` (Default `0`).
 - `lastAccessedAt`: `DateTime?`.
@@ -181,6 +181,7 @@ Audit and history record of AI-assisted Bengali wish and poem completions.
 - `inputTokens`: `Int?`.
 - `outputTokens`: `Int?`.
 - `createdAt`: `DateTime` (Default `now()`).
+- **Privacy & Retention**: Deleting a User account cascades to delete all their `AIGeneration` records. Recommended 90-day retention pruning.
 - **Index**: `@@index([userId, createdAt])`.
 
 ---
@@ -230,17 +231,17 @@ The `canvasJSON` field adheres to the following canonical TypeScript structure:
 export interface CanvasDocument {
   version: "1.0.0";
   dimensions: {
-    width: number;       // e.g. 1080
-    height: number;      // e.g. 1920
+    width: number;       // min 100, max 4000
+    height: number;      // min 100, max 4000
     unit: "px";
   };
-  backgroundColor: string; // Hex or rgba
+  backgroundColor: string; // Sanitized hex/rgb/rgba (no url(), expression())
   backgroundImage?: {
-    url: string;
+    src: string;         // Strict HTTPS URL (no SSRF / private IPs)
     opacity: number;
   };
-  fontsUsed: string[];   // Pre-parsed list of font families needed (e.g., ["Hind Siliguri", "Anek Bangla"])
-  objects: CanvasObject[]; // Ordered list of Fabric.js serialized objects (Text, Image, Path, Rect)
+  fontsUsed: string[];   // Pre-parsed list of font families needed (max 20)
+  objects: CanvasObject[]; // Maximum 200 objects (no nested groups)
 }
 ```
 
@@ -253,3 +254,11 @@ export interface CanvasDocument {
   - `DATABASE_URL`: Set to Neon pooled connection (`postgres://...pooler.neon.tech/utsob?sslmode=require&pgbouncer=true`).
   - `DIRECT_URL`: Set to Neon direct connection without PgBouncer for Prisma CLI operations (`prisma migrate dev`).
 - **Connection Management**: Instantiated as a single global instance via `src/lib/db/prisma.ts` to prevent multiple connection pools during Next.js Hot Module Replacement (HMR).
+
+---
+
+## 5. Migration History & Live Database Status
+
+- **Prisma Schema Validation**: Validated via `npx prisma validate` (100% compliant).
+- **Prisma Client Generation**: Generated via `npx prisma generate` (Client v6.19.3).
+- **Migration History Initialization**: Pending live Neon PostgreSQL credentials from the Product Owner in `.env.local`. The migration directory `prisma/migrations` will be created when `npx prisma migrate dev --name init` is executed against an active database.

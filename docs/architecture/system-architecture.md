@@ -143,3 +143,4 @@ Building a Bengali-first platform introduces specific technical challenges that 
 ### 5.3 Reliability & Scalability
 - **Serverless Resilience**: Stateless API route handlers auto-scaling with festive spikes (e.g., millions of greetings shared on Eid and Pohela Boishakh mornings).
 - **Database Elasticity**: Neon compute auto-scaling and connection pooling to prevent pool exhaustion during burst traffic.
+

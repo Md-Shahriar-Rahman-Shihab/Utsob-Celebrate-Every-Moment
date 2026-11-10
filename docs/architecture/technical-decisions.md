@@ -1,7 +1,7 @@
 # UTSOB (উৎসব) — Architecture Decision Records (ADRs)
 
-> **Document Version:** 1.0.0  
-> **Status:** APPROVED (Phase 01)  
+> **Document Version:** 1.1.0 (Audited & Remediated)  
+> **Status:** APPROVED  
 > **Format:** MADR (Markdown Architectural Decision Records)  
 
 ---
@@ -10,12 +10,14 @@
 
 - [ADR-001: Next.js App Router as Unified Full-Stack Platform](#adr-001-nextjs-app-router-as-unified-full-stack-platform)
 - [ADR-002: PostgreSQL (Neon) with Prisma ORM and JSONB for Canvas State](#adr-002-postgresql-neon-with-prisma-orm-and-jsonb-for-canvas-state)
-- [ADR-003: Auth.js (v5) with Database Session Strategy and Prisma Adapter](#adr-003-authjs-v5-with-database-session-strategy-and-prisma-adapter)
+- [ADR-003: Auth.js (v5) with Google OAuth, Database Session Strategy and Prisma Adapter](#adr-003-authjs-v5-with-google-oauth-database-session-strategy-and-prisma-adapter)
 - [ADR-004: Fabric.js for 2D Visual Greeting Card & Invitation Canvas](#adr-004-fabricjs-for-2d-visual-greeting-card--invitation-canvas)
 - [ADR-005: Bengali Typography Strategy & Multi-Stage WebFont Preloading](#adr-005-bengali-typography-strategy--multi-stage-webfont-preloading)
 - [ADR-006: Zod for Multi-Tier Strict Validation (Env, Requests, Canvas)](#adr-006-zod-for-multi-tier-strict-validation-env-requests-canvas)
 - [ADR-007: Media Asset Management via Cloudinary Signed Direct Uploads](#adr-007-media-asset-management-via-cloudinary-signed-direct-uploads)
 - [ADR-008: Dual Testing Pipeline with Vitest & Playwright](#adr-008-dual-testing-pipeline-with-vitest--playwright)
+- [ADR-009: Cryptographic Share Passkey Derivation & Constant-Time Verification](#adr-009-cryptographic-share-passkey-derivation--constant-time-verification)
+- [ADR-010: Multi-Vector Canvas JSON Security & DoS Prevention](#adr-010-multi-vector-canvas-json-security--dos-prevention)
 
 ---
 
@@ -58,21 +60,25 @@ Use **PostgreSQL on Neon Serverless** with **Prisma ORM**. Normalized tables rep
 
 ---
 
-## ADR-003: Auth.js (v5) with Database Session Strategy and Prisma Adapter
+## ADR-003: Auth.js (v5) with Google OAuth, Database Session Strategy and Prisma Adapter
 
 ### Context
-Utsob requires secure authentication for creators, casual users, and future event hosts, supporting email/password credentials and social OAuth providers (Google). We evaluated Firebase Auth, Supabase Auth, Clerk, and Auth.js (NextAuth v5).
+Utsob requires secure, low-friction authentication for Bangladeshi creators, casual users, and event hosts. In evaluating Auth.js (v5) integration with Prisma Adapter, an official architectural constraint was identified: **Auth.js Credentials Provider fundamentally requires JWT sessions (`strategy: "jwt"`) and is strictly incompatible with the Database Session strategy (`strategy: "database"`)**. Attempting to combine Credentials Provider with Prisma Adapter database sessions results in unpersisted sessions, configuration errors, or silent auth failures.
 
 ### Decision
-Use **Auth.js (NextAuth v5)** with the **`@auth/prisma-adapter`** and PostgreSQL session storage.
+Standardize the **Initial MVP exclusively on Google OAuth (OIDC)** using **`@auth/prisma-adapter`** with **Database Sessions (`strategy: "database"`)**:
+1. **Google OAuth Only for MVP**: Leverages Google as the primary identity provider in Bangladesh (driven by high Android and Gmail penetration).
+2. **Database Session Persistence**: Every active session is stored in the PostgreSQL `Session` table, providing immediate server-side session revocation.
+3. **No Credentials Provider in MVP**: Email/Password credentials are explicitly excluded from the initial release, eliminating password storage risks, credential stuffing vectors, and session strategy conflicts. If email/password authentication is revisited in future phases, it must use a separately architected JWT strategy or a dedicated passwordless magic link mechanism.
 
 ### Consequences
 - **Positive**:
-  - 100% data ownership inside our Neon PostgreSQL database without third-party vendor lock-in.
-  - Seamless integration with Next.js App Router middleware and server action contexts.
-  - Flexible session revocation capabilities (immediate invalidation on password reset or account compromise).
+  - Full compatibility with Auth.js v5 and `@auth/prisma-adapter` with zero session mismatch anomalies.
+  - 100% database session ownership with immediate session revocation upon security events.
+  - Simplified onboarding for Bangladeshi users via one-click Google login.
+  - Zero password storage, hashing overhead, or credential leak risks.
 - **Negative / Trade-offs**:
-  - Requires maintaining our own authentication schema and token rotation logic.
+  - Users without Google accounts cannot log in during the initial MVP. Mitigated by future evaluation of Magic Links or phone OTP.
 
 ---
 
@@ -174,3 +180,42 @@ Adopt **Vitest** for unit and integration testing, and **Playwright** for end-to
   - Vitest provides native ESM and TypeScript support with near-instant execution speed and Jest-compatible assertions.
   - Playwright allows cross-browser testing (Chromium, Firefox, WebKit) on real rendering engines to verify Bengali typography and canvas pixel accuracy.
   - Clean separation: unit tests run on every git commit; Playwright runs on PR merges and release pipelines.
+
+---
+
+## ADR-009: Cryptographic Share Passkey Derivation & Constant-Time Verification
+
+### Context
+Card creators can protect private cards (e.g. personal family invitations) with an optional passkey. If passkeys are stored in plaintext or compared using standard equality operators (`===`), the platform is vulnerable to credential theft and timing side-channel attacks.
+
+### Decision
+Use **Node.js Native `crypto.scryptSync` with random 16-byte salts** for key derivation and **`crypto.timingSafeEqual`** for verification:
+1. Passkeys are never stored in plaintext. They are derived using `scrypt` (N=16384, r=8, p=1).
+2. Verification uses byte-level constant-time comparison (`timingSafeEqual`) to eliminate timing variance attacks.
+3. Public share tokens are generated using `crypto.randomBytes(16).toString("base64url")`, providing 128 bits of cryptographic entropy.
+
+### Consequences
+- **Positive**:
+  - Zero third-party dependency overhead (native `node:crypto`).
+  - Resistance to GPU/ASIC rainbow table attacks via memory-hard `scrypt` hashing.
+  - Immunity to timing side-channel attacks.
+
+---
+
+## ADR-010: Multi-Vector Canvas JSON Security & DoS Prevention
+
+### Context
+Fabric.js canvas scene graphs represent complex multi-layered objects in JSON. Untrusted canvas JSON could carry stored XSS payloads, SVG script injections, prototype pollution attempts, SSRF image links (targeting cloud metadata services or internal networks), or memory exhaustion bombs (thousands of objects or deeply nested group trees).
+
+### Decision
+Implement a **Multi-Vector Hardened Canvas Zod Schema** (`canvasDocumentSchema`):
+1. **Object Whitelist & Strict Schema**: Only approved Fabric.js types allowed; `.strict()` rejects unknown properties (blocking prototype pollution via `__proto__` or `constructor`).
+2. **SSRF & Scheme Restriction**: Image URLs must strictly use `https:` and are validated against internal IP ranges (`localhost`, `127.0.0.1`, `169.254.*`, `10.*`, `192.168.*`, `172.16-31.*`). Data URIs and unencrypted HTTP are rejected.
+3. **SVG Path Validation**: Path commands are strictly restricted to standard SVG syntax (`MmLlHhVvCcSsQqTtAaZz0-9\s,.-+`), rejecting XML/HTML `<script>` tags.
+4. **CSS Expression Blocking**: Color properties (`fill`, `stroke`, `backgroundColor`) forbid `url()`, `expression()`, `<` and `>`.
+5. **DoS & Recursion Caps**: Enforce maximum 200 objects per canvas, max 50 objects per group, max 2,000 characters per text object, and strictly disallow nested groups.
+
+### Consequences
+- **Positive**:
+  - Eliminates stored XSS, SSRF, prototype pollution, and canvas recursion DoS.
+  - Zero runtime impact during rendering.

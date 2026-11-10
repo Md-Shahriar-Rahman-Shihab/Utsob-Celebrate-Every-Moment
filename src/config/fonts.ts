@@ -48,3 +48,4 @@ export const fontVariables = [
   fontTiroBangla.variable,
   fontGalada.variable,
 ].join(" ");
+

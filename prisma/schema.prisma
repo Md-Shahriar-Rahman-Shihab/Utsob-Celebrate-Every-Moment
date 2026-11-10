@@ -326,3 +326,4 @@ model RSVP {
   @@index([invitationId, status])
   @@map("rsvps")
 }
+
